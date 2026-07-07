@@ -1,0 +1,7 @@
+event_id                 ,flight_id               ,aircraft_id              ,engine_id               ,event_time            ,ingest_time           ,sequence_no           ,altitude_ft           ,speed_knots           ,engine_temp_c         ,engine_pressure_kpa   ,fuel_flow_kg_h        ,vibration_hz          ,rpm                   ,oil_temp_c            ,oil_pressure_kpa      ,status                ,quality_flag          ,is_anomaly            ,source                
+EVT_0000001,FLT_20260314_001,AC_001,ENG_001_L,2026-03-14T08:15:30Z,2026-03-14T08:15:31Z,1,28000,430.5,615.2,245.8,2410.6,11.4,9200,88.1,312.7,OK,GOOD,FALSE,simulator_v1
+EVT_0000002,FLT_20260314_001,AC_001,ENG_001_R,2026-03-14T08:15:30Z,2026-03-14T08:15:31Z,1,28000,430.5,618,247.3,2421.4,11.7,9235,88.9,315.1,OK,GOOD,FALSE,simulator_v1
+EVT_0000003,FLT_20260314_002,AC_002,ENG_002_L,2026-03-14T10:40:12Z,2026-03-14T10:40:13Z,1,31000,455.2,640.7,258.6,2510.9,12.1,9510,90.4,321.3,OK,GOOD,FALSE,simulator_v1
+EVT_0000004,FLT_20260314_003,AC_003,ENG_003_L,2026-03-14T12:45:00Z,2026-03-14T12:45:02Z,1,29500,442,701.5,268.1,2615,13.4,9800,93.2,330.4,WARN,GOOD,TRUE,simulator_v1
+EVT_0000005,FLT_20260314_004,AC_004,ENG_004_R,2026-03-14T14:35:45Z,2026-03-14T14:35:46Z,1,22000,398.4,588.3,233.7,2280.2,10.2,9012,84.3,304.2,OK,GOOD,FALSE,simulator_v1
+EVT_0000006,FLT_20260314_006,AC_006,ENG_006_L,2026-03-14T19:10:20Z,2026-03-14T19:10:24Z,1,18000,320,522.6,210.4,3105.7,9.1,8420,79.8,287.5,OK,LATE,FALSE,simulator_v1

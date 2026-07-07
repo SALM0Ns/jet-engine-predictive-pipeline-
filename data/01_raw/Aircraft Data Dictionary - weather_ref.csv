@@ -1,0 +1,6 @@
+weather_code,weather_name,probability
+CLR,Clear,60
+CLD,Cloudy,20
+RAIN,Light Rain,10
+FOG,Fog,5
+STORM,Thunderstorm,5

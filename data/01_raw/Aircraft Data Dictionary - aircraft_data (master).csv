@@ -1,0 +1,7 @@
+aircraft_id             ,aircraft_model        ,manufacturer          ,tail_number           ,manufacture_date      ,service_start_date    ,status                ,created_at            ,updated_at            
+AC_001,F-22,Lockheed Martin,AF-22001,2018-03-12,2018-07-01,ACTIVE,2026-03-14T10:00:00Z,2026-03-14T10:00:00Z
+AC_002,F-15,McDonnell Douglas,AF-15002,2017-09-20,2018-01-15,ACTIVE,2026-03-14T10:00:00Z,2026-03-14T10:00:00Z
+AC_003,F-35,Lockheed Martin,AF-35003,2019-05-08,2019-09-10,ACTIVE,2026-03-14T10:00:00Z,2026-03-14T10:00:00Z
+AC_004,F-18,Boeing,AF-18004,2016-11-02,2017-02-01,ACTIVE,2026-03-14T10:00:00Z,2026-03-14T10:00:00Z
+AC_005,F-16,Lockheed Martin,AF-16005,2015-08-18,2015-12-01,MAINTENANCE,2026-03-14T10:00:00Z,2026-03-14T10:00:00Z
+AC_006,AC-130,Lockheed Martin,AF-13006,2014-06-14,2014-10-01,ACTIVE,2026-03-14T10:00:00Z,2026-03-14T10:00:00Z

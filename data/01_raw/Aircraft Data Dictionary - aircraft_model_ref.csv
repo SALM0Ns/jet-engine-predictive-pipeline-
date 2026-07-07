@@ -1,0 +1,7 @@
+aircraft_model,manufacturer,engine_model,engine_count,service_branch,aircraft_type,max_speed_knots,cruise_altitude_ft
+F-22,Lockheed Martin,F119-PW-100,2,USAF,Fighter,1500,35000
+F-15,McDonnell Douglas,F100-PW-220,2,USAF,Fighter,1650,36000
+F-35,Lockheed Martin,F135-PW-100,1,USAF,Multirole,1200,35000
+F/A-18,Boeing,F404-GE-402,2,US Navy,Multirole,1190,36000
+F-16,Lockheed Martin,F110-GE-129,1,USAF,Fighter,1500,35000
+AC-130,Lockheed Martin,T56-A-15,4,USAF,Gunship,320,28000
