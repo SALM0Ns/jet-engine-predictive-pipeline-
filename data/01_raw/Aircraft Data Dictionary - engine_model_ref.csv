@@ -1,7 +1,0 @@
-engine_model,manufacturer,engine_type,fuel_type,max_rpm,max_temp_c,oil_temp_max_c
-F119-PW-100,Pratt & Whitney,Turbofan,JP-8,12000,980,135
-F100-PW-220,Pratt & Whitney,Turbofan,JP-8,11800,950,130
-F135-PW-100,Pratt & Whitney,Turbofan,JP-8,13000,1020,140
-F404-GE-402,GE Aerospace,Turbofan,JP-5,11500,930,125
-F110-GE-129,GE Aerospace,Turbofan,JP-8,12200,960,130
-T56-A-15,Allison,Turboprop,JP-8,14000,850,120
