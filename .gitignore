@@ -1,0 +1,11 @@
+# Credentials
+*-service-account*.json
+flight-data-sim-*.json
+upload_to_gcs*.py
+
+# Generated immutable batches
+data/processed/batches/
+
+# Python
+__pycache__/
+*.py[cod]

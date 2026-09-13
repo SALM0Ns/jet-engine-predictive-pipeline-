@@ -1,186 +1,175 @@
-import pandas as pd
-import numpy as np
+"""Relational mock-data factory for aircraft telemetry batches.
+
+The factory never modifies reference data and never overwrites a previous run.
+Each invocation writes a self-contained batch under ``data/processed/batches``.
+"""
+
+from __future__ import annotations
+
+import json
 import random
+import shutil
+import tempfile
+import uuid
 from datetime import datetime, timedelta, timezone
-import os
-import time # เอามาจับเวลาเล่นๆ ว่า 1 ล้านแถวใช้เวลาเท่าไหร่
+from pathlib import Path
 
-def generate_relational_mock_data(num_new_flights=5000): # ตั้งต้นที่ 5,000 ไฟลต์
-    start_timer = time.time()
-    
-    BASE_PATH = r"D:\Work\Coding\Python\Data Engineer\Aircradt Data\data\Raw"
-    
-    print("📖 Loading the 7 Reference Master Data tables...")
-    try:
-        df_aircraft = pd.read_csv(f"{BASE_PATH}/Aircraft Data Dictionary - aircraft_data .csv")
-        df_engine = pd.read_csv(f"{BASE_PATH}/Aircraft Data Dictionary - engine_data.csv")
-        df_pilot = pd.read_csv(f"{BASE_PATH}/Aircraft Data Dictionary - pilot_data.csv")
-        df_airport = pd.read_csv(f"{BASE_PATH}/Aircraft Data Dictionary - airport_data.csv")
-        df_weather = pd.read_csv(f"{BASE_PATH}/Aircraft Data Dictionary - weather_data.csv")
-    except Exception as e:
-        print(f"❌ Failed to load reference data. Please check your path: {e}")
-        return
+import pandas as pd
 
-    for df in [df_aircraft, df_engine, df_pilot, df_airport, df_weather]:
-        df.columns = df.columns.str.strip()
 
-    print(f"🚀 Initiating generation of {num_new_flights} new flight records...")
-    
-    new_flights = []
-    start_date = datetime(2026, 7, 10, 8, 0, 0, tzinfo=timezone.utc) 
-    
-    aircraft_ids = df_aircraft['aircraft_id'].tolist()
-    pilot_ids = df_pilot['pilot_id'].tolist()
-    airports = df_airport['airport_code'].tolist()
-    weathers = df_weather['weather_name'].tolist() 
-    
-    for i in range(1, num_new_flights + 1):
-        flight_id = f"FLT_20260710_{i:04d}"
-        flight_no = f"MIL{random.randint(10,99)}{i:03d}"
-        
-        ac_id = random.choice(aircraft_ids)
-        plt_id = random.choice(pilot_ids)
-        coplt_id = random.choice([p for p in pilot_ids if p != plt_id]) 
-        
-        dep_ap = random.choice(airports)
-        arr_ap = random.choice([a for a in airports if a != dep_ap])
-        
-        duration_hours = random.uniform(1.0, 3.0)
-        dep_time = start_date + timedelta(hours=random.uniform(1, 4) * i)
-        arr_time = dep_time + timedelta(hours=duration_hours)
-        weather = random.choice(weathers)
-        
-        current_time_str = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        
-        new_flights.append({
-            "flight_id": flight_id,
-            "flight_no": flight_no,
-            "aircraft_id": ac_id,
-            "pilot_id": plt_id,
-            "copilot_id": coplt_id,
-            "departure_airport": dep_ap,
-            "arrival_airport": arr_ap,
-            "scheduled_departure": dep_time.isoformat().replace("+00:00", "Z"),
-            "actual_departure": (dep_time + timedelta(minutes=random.randint(0,10))).isoformat().replace("+00:00", "Z"),
-            "scheduled_arrival": arr_time.isoformat().replace("+00:00", "Z"),
-            "actual_arrival": (arr_time + timedelta(minutes=random.randint(0,10))).isoformat().replace("+00:00", "Z"),
-            "flight_status": "COMPLETED",
-            "weather_condition": weather,
-            "created_at": current_time_str,
-            "updated_at": current_time_str
+PROJECT_ROOT = Path(__file__).resolve().parent
+REFERENCE_DIR = PROJECT_ROOT / "data" / "reference"
+BATCHES_DIR = PROJECT_ROOT / "data" / "processed" / "batches"
+LATE_INGEST_THRESHOLD = timedelta(minutes=5)
+
+
+def _read_reference(filename: str) -> pd.DataFrame:
+    frame = pd.read_csv(REFERENCE_DIR / filename, skipinitialspace=True)
+    frame.columns = frame.columns.str.strip()
+    return frame
+
+
+def _new_batch_id(now: datetime) -> str:
+    return f"batch-{now.strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
+
+
+def generate_relational_mock_data(
+    num_new_flights: int = 5_000,
+    ticks_per_flight: int = 100,
+    seed: int | None = None,
+    batch_id: str | None = None,
+    start_time: datetime | None = None,
+) -> Path:
+    """Generate a time-consistent, immutable telemetry batch and return its path."""
+    if num_new_flights <= 0 or ticks_per_flight <= 0:
+        raise ValueError("num_new_flights and ticks_per_flight must be positive")
+
+    now = datetime.now(timezone.utc)
+    start_time = start_time or now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if start_time.tzinfo is None:
+        raise ValueError("start_time must include a timezone")
+    batch_id = batch_id or _new_batch_id(now)
+    if not batch_id.replace("-", "").replace("_", "").isalnum():
+        raise ValueError("batch_id may contain only letters, numbers, hyphens and underscores")
+    BATCHES_DIR.mkdir(parents=True, exist_ok=True)
+    destination = BATCHES_DIR / batch_id
+    if destination.exists():
+        raise FileExistsError(f"Batch already exists: {destination}")
+
+    rng = random.Random(seed)
+    aircraft = _read_reference("Aircraft Data Dictionary - aircraft_data .csv")
+    engines = _read_reference("Aircraft Data Dictionary - engine_data.csv")
+    pilots = _read_reference("Aircraft Data Dictionary - pilot_data.csv")
+    airports = _read_reference("Aircraft Data Dictionary - airport_data.csv")
+    weather = _read_reference("Aircraft Data Dictionary - weather_data.csv")
+    active_aircraft = aircraft.loc[aircraft["status"].eq("ACTIVE")].copy()
+    if active_aircraft.empty or len(pilots) < 2 or len(airports) < 2:
+        raise ValueError("Need active aircraft, two pilots, and two airports")
+
+    engine_ids_by_aircraft = engines.groupby("aircraft_id")["engine_id"].agg(list).to_dict()
+    active_aircraft = active_aircraft.loc[active_aircraft["aircraft_id"].isin(engine_ids_by_aircraft)]
+    aircraft_by_id = active_aircraft.set_index("aircraft_id")
+    engine_by_id = engines.set_index("engine_id")
+    engine_state = {
+        engine_id: {"flight_cycles": float(row.flight_cycles), "flight_hours": float(row.flight_hours), "wear": min(0.65, float(row.flight_hours) / 20_000)}
+        for engine_id, row in engine_by_id.iterrows()
+    }
+    pilot_ids = pilots["pilot_id"].tolist()
+    airport_codes = airports["airport_code"].tolist()
+    weather_values = weather["weather_name"].tolist()
+    weather_weights = weather["probability"].tolist()
+    flights: list[dict] = []
+    telemetry: list[dict] = []
+
+    # Flights are serialized three hours apart. This guarantees that a pilot cannot
+    # be assigned to overlapping flights while retaining varied flight durations.
+    for number in range(1, num_new_flights + 1):
+        flight_id = f"FLT_{batch_id}_{number:06d}"
+        aircraft_id = rng.choice(active_aircraft["aircraft_id"].tolist())
+        pilot_id = rng.choice(pilot_ids)
+        copilot_id = rng.choice([value for value in pilot_ids if value != pilot_id])
+        departure_airport = rng.choice(airport_codes)
+        arrival_airport = rng.choice([code for code in airport_codes if code != departure_airport])
+        weather_condition = rng.choices(weather_values, weights=weather_weights, k=1)[0]
+        scheduled_departure = start_time + timedelta(hours=3 * (number - 1))
+        actual_departure = scheduled_departure + timedelta(minutes=rng.randint(0, 10))
+        duration = timedelta(minutes=rng.randint(100, 180))
+        actual_arrival = actual_departure + duration
+        created_at = now.isoformat().replace("+00:00", "Z")
+        flights.append({
+            "batch_id": batch_id, "flight_id": flight_id, "flight_no": f"MIL{rng.randint(10, 99)}{number:05d}",
+            "aircraft_id": aircraft_id, "pilot_id": pilot_id, "copilot_id": copilot_id,
+            "departure_airport": departure_airport, "arrival_airport": arrival_airport,
+            "scheduled_departure": scheduled_departure.isoformat().replace("+00:00", "Z"),
+            "actual_departure": actual_departure.isoformat().replace("+00:00", "Z"),
+            "scheduled_arrival": (scheduled_departure + duration).isoformat().replace("+00:00", "Z"),
+            "actual_arrival": actual_arrival.isoformat().replace("+00:00", "Z"),
+            "flight_status": "COMPLETED", "weather_condition": weather_condition,
+            "created_at": created_at, "updated_at": created_at,
         })
-        
-    df_new_flights = pd.DataFrame(new_flights)
-    
-    print("📈 Simulating 1 MILLION time-series sensor data points... (This might take a minute ⏳)")
-    
-    sensor_rows = []
-    event_counter = 1
-    
-    for _, flight in df_new_flights.iterrows():
-        flt_id = flight['flight_id']
-        ac_id = flight['aircraft_id']
-        
-        active_engines = df_engine[df_engine['aircraft_id'].str.strip() == ac_id.strip()]
-        ac_spec = df_aircraft[df_aircraft['aircraft_id'].str.strip() == ac_id.strip()].iloc[0]
-        max_altitude = int(ac_spec.get('cruise_altitude_ft', 35000))
-        max_speed = float(ac_spec.get('max_speed_knots', 1500))
-        
-        num_ticks = 100 # 🔥 ปรับเป็น 100 Ticks เพื่อให้ได้ดาต้า 1 ล้านแถว!
-        
-        for tick in range(1, num_ticks + 1):
-            if tick < 15: 
-                current_alt = (max_altitude / 15) * tick
-                current_speed = (max_speed / 2) + (tick * 20)
-            elif tick > 85: 
-                current_alt = max_altitude - ((max_altitude / 15) * (tick - 85))
-                current_speed = (max_speed / 2) - ((tick - 85) * 20)
-            else: 
-                current_alt = max_altitude + random.randint(-500, 500)
-                current_speed = (max_speed * 0.8) + random.randint(-20, 20)
-
-            for _, eng in active_engines.iterrows():
-                eng_id = eng['engine_id']
-                
-                max_rpm_spec = int(eng.get('max_rpm', 12000))
-                max_temp_spec = float(eng.get('max_temp_c', 950))
-                
-                degradation = (tick / num_ticks) * 25
-                weather_impact = 30 if flight['weather_condition'] == 'Thunderstorm' else 0
-                
-                temp = (max_temp_spec * 0.65) + degradation + weather_impact + random.uniform(-5, 5)
-                rpm = (max_rpm_spec * 0.78) - (degradation * 2) + random.randint(-50, 50)
-                
-                is_anomaly = temp > (max_temp_spec * 0.72)
-                status = "WARNING" if is_anomaly else "OK"
-                event_id = f"EVT_MOCK_{event_counter:08d}"
-                
-                sensor_time = datetime.fromisoformat(flight['actual_departure'].replace('Z', '+00:00')) + timedelta(minutes=tick)
-                ingest_time_str = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-                
-                sensor_rows.append({
-                    "event_id": event_id,
-                    "flight_id": flt_id,
-                    "aircraft_id": ac_id,
-                    "engine_id": eng_id,
-                    "event_time": sensor_time.isoformat().replace("+00:00", "Z"),
-                    "ingest_time": ingest_time_str,
-                    "sequence_no": tick,
-                    "altitude_ft": int(current_alt),
-                    "speed_knots": round(current_speed, 1),
-                    "engine_temp_c": round(temp, 1),
-                    "engine_pressure_kpa": round(200 + (rpm * 0.005) + random.uniform(-2,2), 1),
-                    "fuel_flow_kg_h": round(1500 + (current_speed * 1.2) + random.uniform(-10,10), 1),
-                    "vibration_hz": round(10 + (tick * 0.05) + random.uniform(-0.5, 0.5), 1),
-                    "rpm": int(rpm),
-                    "oil_temp_c": round((temp * 0.15) + random.uniform(-2,2), 1),
-                    "oil_pressure_kpa": round(350 - (tick * 0.2) + random.randint(-5, 5), 1),
-                    "status": status,
-                    "quality_flag": "GOOD",
-                    "is_anomaly": is_anomaly,
-                    "source": "automated_1M_stress_test"
+        spec = aircraft_by_id.loc[aircraft_id]
+        for tick in range(1, ticks_per_flight + 1):
+            phase = tick / (ticks_per_flight + 1)
+            event_time = actual_departure + duration * phase
+            climb_descent = min(phase / 0.18, 1, (1 - phase) / 0.18)
+            altitude = int(max(0, float(spec.cruise_altitude_ft) * climb_descent))
+            speed = max(0.0, float(spec.max_speed_knots) * (0.30 + 0.50 * climb_descent))
+            for engine_id in engine_ids_by_aircraft[aircraft_id]:
+                engine = engine_by_id.loc[engine_id]
+                state = engine_state[engine_id]
+                within_flight_wear = state["wear"] + phase * 0.002
+                weather_impact = 30 if weather_condition == "Thunderstorm" else 0
+                temperature = float(engine.max_temp_c) * (0.57 + within_flight_wear * 0.22) + weather_impact + rng.uniform(-4, 4)
+                vibration = 8.0 + within_flight_wear * 22 + phase * 1.5 + rng.uniform(-0.4, 0.4)
+                anomaly = temperature > float(engine.max_temp_c) * 0.75 or vibration > 18
+                is_late = rng.random() < 0.01
+                ingest_delay = timedelta(minutes=rng.randint(6, 60)) if is_late else timedelta(seconds=rng.randint(1, 90))
+                telemetry.append({
+                    "batch_id": batch_id, "event_id": f"EVT_{batch_id}_{len(telemetry) + 1:012d}",
+                    "flight_id": flight_id, "aircraft_id": aircraft_id, "engine_id": engine_id,
+                    "event_time": event_time.isoformat().replace("+00:00", "Z"),
+                    "ingest_time": (event_time + ingest_delay).isoformat().replace("+00:00", "Z"),
+                    "sequence_no": tick, "altitude_ft": altitude, "speed_knots": round(speed + rng.uniform(-12, 12), 1),
+                    "engine_temp_c": round(temperature, 1), "engine_pressure_kpa": round(225 + rng.uniform(-5, 5), 1),
+                    "fuel_flow_kg_h": round(1200 + speed * 1.15 + rng.uniform(-15, 15), 1), "vibration_hz": round(vibration, 2),
+                    "rpm": int(float(engine.max_rpm) * (0.65 + climb_descent * 0.15) + rng.randint(-40, 40)),
+                    "oil_temp_c": round(temperature * 0.15 + rng.uniform(-2, 2), 1), "oil_pressure_kpa": round(350 - phase * 20 + rng.uniform(-4, 4), 1),
+                    "status": "WARNING" if anomaly else "OK", "quality_flag": "LATE" if is_late else "GOOD",
+                    "is_anomaly": anomaly, "cumulative_degradation": round(within_flight_wear, 6), "source": "relational_factory_v3",
                 })
-                event_counter += 1
+        flight_hours = duration.total_seconds() / 3600
+        for engine_id in engine_ids_by_aircraft[aircraft_id]:
+            state = engine_state[engine_id]
+            state["flight_cycles"] += 1
+            state["flight_hours"] += flight_hours
+            state["wear"] = min(0.95, state["wear"] + flight_hours / 15_000 + 0.0005)
 
-    df_new_sensors = pd.DataFrame(sensor_rows)
+    flight_frame = pd.DataFrame(flights)
+    telemetry_frame = pd.DataFrame(telemetry)
+    engine_snapshot = engines.copy()
+    engine_snapshot["flight_cycles"] = engine_snapshot["engine_id"].map(lambda value: int(engine_state[value]["flight_cycles"]))
+    engine_snapshot["flight_hours"] = engine_snapshot["engine_id"].map(lambda value: round(engine_state[value]["flight_hours"], 2))
+    engine_snapshot["cumulative_degradation"] = engine_snapshot["engine_id"].map(lambda value: round(engine_state[value]["wear"], 6))
+    engine_snapshot["updated_at"] = created_at
 
-    print("🔄 Updating engine accumulating metrics in Memory...")
-    for _, flight in df_new_flights.iterrows():
-        ac_id = flight['aircraft_id']
-        dep = datetime.fromisoformat(flight['actual_departure'].replace('Z', '+00:00'))
-        arr = datetime.fromisoformat(flight['actual_arrival'].replace('Z', '+00:00'))
-        flight_duration_hours = (arr - dep).total_seconds() / 3600
-        
-        update_time_str = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        
-        engine_mask = df_engine['aircraft_id'].str.strip() == ac_id.strip()
-        df_engine.loc[engine_mask, 'flight_cycles'] += 1
-        df_engine.loc[engine_mask, 'flight_hours'] += round(flight_duration_hours, 1)
-        df_engine.loc[engine_mask, 'updated_at'] = update_time_str
+    temporary = Path(tempfile.mkdtemp(prefix=f".{batch_id}-", dir=BATCHES_DIR))
+    try:
+        flight_frame.to_csv(temporary / "flight_data.csv", index=False)
+        telemetry_frame.to_parquet(temporary / "engine_sensor_data.parquet", index=False)
+        engine_snapshot.to_csv(temporary / "engine_state_snapshot.csv", index=False)
+        manifest = {
+            "batch_id": batch_id, "created_at": created_at, "seed": seed,
+            "flight_rows": len(flight_frame), "telemetry_rows": len(telemetry_frame),
+            "ticks_per_flight": ticks_per_flight, "late_ingest_threshold_seconds": int(LATE_INGEST_THRESHOLD.total_seconds()),
+            "files": ["flight_data.csv", "engine_sensor_data.parquet", "engine_state_snapshot.csv"],
+        }
+        (temporary / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        temporary.rename(destination)
+    except Exception:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
+    return destination
 
-        pilot_mask = df_pilot['pilot_id'].str.strip() == flight['pilot_id'].strip()
-        df_pilot.loc[pilot_mask, 'total_flight_hours'] += round(flight_duration_hours, 1)
-        df_pilot.loc[pilot_mask, 'updated_at'] = update_time_str
-
-    # 💾 5. Export Data (ส่งเข้าโฟลเดอร์ Raw ล้วนๆ ไม่แตะของเดิมหน้าบ้าน)
-    OUTPUT_DIR = f"{BASE_PATH}/data/Raw"
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    
-    print("💾 Saving files to disk... (Parquet compression in progress)")
-    df_new_flights.to_csv(f"{OUTPUT_DIR}/expanded_flight_data.csv", index=False)
-    df_new_sensors.to_parquet(f"{OUTPUT_DIR}/expanded_engine_sensor_data.parquet", index=False)
-    
-    # เซฟไฟล์ Master Data ตัวใหม่แยกออกมาไว้สำหรับทำ Ingest ทับของเดิม
-    df_engine.to_csv(f"{OUTPUT_DIR}/updated_engine_data.csv", index=False)
-    df_pilot.to_csv(f"{OUTPUT_DIR}/updated_pilot_data.csv", index=False)
-    
-    end_timer = time.time()
-    
-    print("\n✨ 1 MILLION ROWS GENERATION COMPLETED! ✨")
-    print(f"⏱️ Time taken: {round(end_timer - start_timer, 2)} seconds")
-    print(f"📁 Flight data exported: {len(df_new_flights):,} rows")
-    print(f"📁 Sensor data exported: {len(df_new_sensors):,} rows")
-    print(f"📁 Updated Master Data ready for Ingest: updated_engine_data.csv, updated_pilot_data.csv")
 
 if __name__ == "__main__":
-    generate_relational_mock_data()
+    print(generate_relational_mock_data())

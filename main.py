@@ -1,20 +1,23 @@
+import os
+
 import generate_cmapss_sensor
-import upload_to_azure
+from upload_to_gcs import upload_batch_to_gcs
+from validate_data import validate_batch
 
 def run_automated_pipeline():
     print("===  Starting Automated Aircraft Data Pipeline ===")
     
-    # 1. สั่งปั๊มข้อมูล (กำหนด Path ให้ตรงกับโครงสร้างใน Docker)
-    ENGINE_DATA_PATH = '/app/data/refer/Aircraft Data Dictionary - engine_data.csv' 
-    OUTPUT_DIR = '/app/data/Raw'
-    
     print(">> Phase 1: Generating Simulated Sensor Data...")
-    # ลองปั๊มสัก 100 รอบต่อเครื่องก่อน จะได้รันทดสอบไวๆ
-    generate_cmapss_sensor.generate_realistic_sensor_data(ENGINE_DATA_PATH, OUTPUT_DIR, rows_per_engine=100)
-    
-    print("\n>> Phase 2: Uploading Data to Azure Data Lake...")
-    # 2. สั่งอัปโหลด
-    upload_to_azure.upload_file_to_cloud()
+    flight_count = int(os.getenv("NUM_NEW_FLIGHTS", "5000"))
+    batch_dir = generate_cmapss_sensor.generate_relational_mock_data(num_new_flights=flight_count)
+    validate_batch(batch_dir)
+    print(f">> Generated validated batch: {batch_dir}")
+
+    if os.getenv("UPLOAD_TO_GCS") == "1":
+        print("\n>> Phase 2: Uploading batch to Google Cloud Storage...")
+        upload_batch_to_gcs(batch_dir)
+    else:
+        print("\n>> Phase 2 skipped (set UPLOAD_TO_GCS=1 to enable upload).")
     
     print("\n===  Pipeline Completed Successfully! ===")
 
