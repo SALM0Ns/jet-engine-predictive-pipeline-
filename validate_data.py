@@ -51,6 +51,13 @@ def validate_batch(batch_dir: str | Path) -> None:
         raise ValueError("A non-active aircraft was assigned a flight")
     if (flights.pilot_id == flights.copilot_id).any():
         raise ValueError("A flight has the same pilot and copilot")
+    for pilot_id in set(flights.pilot_id) | set(flights.copilot_id):
+        assigned = flights.loc[(flights.pilot_id == pilot_id) | (flights.copilot_id == pilot_id)].copy()
+        assigned["_start"] = pd.to_datetime(assigned.actual_departure, utc=True, format="ISO8601")
+        assigned["_end"] = pd.to_datetime(assigned.actual_arrival, utc=True, format="ISO8601")
+        assigned = assigned.sort_values("_start")
+        if (assigned["_start"].iloc[1:].to_numpy() < assigned["_end"].iloc[:-1].to_numpy()).any():
+            raise ValueError(f"Pilot {pilot_id} has overlapping flights")
     flight_aircraft = flights.set_index("flight_id").aircraft_id
     engine_aircraft = engines.set_index("engine_id").aircraft_id
     if not sensors.apply(lambda row: flight_aircraft[row.flight_id] == row.aircraft_id == engine_aircraft[row.engine_id], axis=1).all():

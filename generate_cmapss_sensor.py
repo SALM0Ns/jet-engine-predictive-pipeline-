@@ -81,7 +81,7 @@ def generate_relational_mock_data(
     flights: list[dict] = []
     telemetry: list[dict] = []
 
-    # Flights are serialized three hours apart. This guarantees that a pilot cannot
+    # Flights are serialized four hours apart. This guarantees that a pilot cannot
     # be assigned to overlapping flights while retaining varied flight durations.
     for number in range(1, num_new_flights + 1):
         flight_id = f"FLT_{batch_id}_{number:06d}"
@@ -91,7 +91,7 @@ def generate_relational_mock_data(
         departure_airport = rng.choice(airport_codes)
         arrival_airport = rng.choice([code for code in airport_codes if code != departure_airport])
         weather_condition = rng.choices(weather_values, weights=weather_weights, k=1)[0]
-        scheduled_departure = start_time + timedelta(hours=3 * (number - 1))
+        scheduled_departure = start_time + timedelta(hours=4 * (number - 1))
         actual_departure = scheduled_departure + timedelta(minutes=rng.randint(0, 10))
         duration = timedelta(minutes=rng.randint(100, 180))
         actual_arrival = actual_departure + duration
