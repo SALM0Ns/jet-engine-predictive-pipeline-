@@ -49,6 +49,7 @@ All files from one batch must be loaded together. Do not join telemetry from one
 |-- README.md
 |-- .gitignore
 |-- .vscode/settings.json
+|-- docs/images/dashboard-preview.png
 |-- data/reference/
 |-- data/processed/batches/
 |-- data/legacy/
@@ -77,6 +78,22 @@ The old nested output under data/Raw/data/Raw/ was moved to data/legacy/nested_r
 | Engine state snapshot | engine_id | Post-batch cycles, hours, and degradation |
 
 Airport values in flight data are codes such as KLSV, not display names, so they join directly to the airport reference table.
+
+## Dashboard preview
+
+The following screenshot shows an example dashboard built from the generated engine-state and telemetry outputs. It is included as a visual preview of the intended consumption layer; it is not a raw input file and is not used by the generator or validator.
+
+![Aircraft engine health dashboard preview](docs/images/dashboard-preview.png)
+
+The preview currently communicates:
+
+- Flight volume and anomaly count
+- Aircraft and engine filtering
+- Engine degradation versus flight hours
+- Temperature and vibration against a maximum-temperature reference
+- Engine health indicators and estimated remaining useful life fields
+
+The dashboard values should be regenerated from one validated batch before being used for analysis. The current repository does not yet include the dashboard source or the mathematical formulas behind EHI, MUS, or RUL; those should be documented when the predictive layer is implemented.
 
 ## Generated batch files
 
